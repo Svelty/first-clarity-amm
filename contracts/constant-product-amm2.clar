@@ -81,7 +81,7 @@
         (try! (contract-call? token1-contract transfer token1-amount tx-sender this-contract none))
         (try! (contract-call? token2-contract transfer token2-amount tx-sender this-contract none))
         (if (is-eq lp-token-supply u0)
-            (try! (as-contract (contract-call? .cpm2-lp-token mint (sqrti (* token1-balance token2-balance)) sender)))
+            (try! (as-contract (contract-call? .cpm2-lp-token mint (sqrti (* token1-amount token2-amount)) sender)))
             ;; needs some checks to make sure we arn't dividing by 0
             (if (< (/ (* token1-amount lp-token-supply) token1-balance) (/ (* token2-amount lp-token-supply) token2-balance))
                 (try! (as-contract (contract-call? .cpm2-lp-token mint (/ (* token1-amount lp-token-supply) token1-balance) sender)))
