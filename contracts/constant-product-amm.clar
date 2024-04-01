@@ -15,18 +15,8 @@
 
 ;; https://solidity-by-example.org/defi/constant-product-amm/ - example
 
-;; pricing - constant product x * y = k (token_suppy_y * token_supply_x = constant_k)
-;; (x + dx)(y - dy) = k   for a change in y, change in x must corospond to keep k constant 
-;; y - dy = k/(x+dx)
-;; y - k/(x+dx) = dy
-;; dy = y - k/(x+dx)
-;; dy = (x+dx)y/(x+dx) - k/(x+dx)
-;; dy = (xy + dxy -k)/(x+dx)
-;; dy = (k + dxy - k)/(x+dx)
-;; dy = dxy/(x + dx)     for a change of x dx, change of y dy is equal to the change of x times the supply of y divided by the supply of x plus the change of x
 
-;; price of x = token_supply_y/token_supply_x
-;; price of y = token_supply_x/token_supply_y
+;;problems: first itteration too generalised, start with case of swaping single pair
 
 
 ;; traits
@@ -134,7 +124,7 @@
 ;; dy = ydx/x     to add amount dx you must add amount dy equal to current amount y times amount to add dx divided by current amount x
 
 (define-public (add-liquidity (pair-id uint) (token1-amount uint) (token2-amount uint))
-    (begin 
+    (begin ;;do i actually need to use begin here?
         (let
             (
                 (pair (unwrap! (map-get? pairs pair-id) err-invalid-id))
@@ -159,6 +149,40 @@
         )
     )
 )
+
+;; pricing - constant product x * y = k (token_suppy_y * token_supply_x = constant_k)
+;; (x + dx)(y - dy) = k   for a change in y, change in x must corospond to keep k constant 
+;; y - dy = k/(x+dx)
+;; y - k/(x+dx) = dy
+;; dy = y - k/(x+dx)
+;; dy = (x+dx)y/(x+dx) - k/(x+dx)
+;; dy = (xy + dxy -k)/(x+dx)
+;; dy = (k + dxy - k)/(x+dx)
+;; dy = dxy/(x + dx)     for a change of x dx, change of y dy is equal to the change of x times the supply of y divided by the supply of x plus the change of x
+
+;; price of x = token_supply_y/token_supply_x
+;; price of y = token_supply_x/token_supply_y
+
+;; TODO: get add liquidity working first
+;; (define-public (swap-deliver-exact (pair-id uint) (token-id uint) (amount uint))
+;;     (begin
+;;         (let 
+;;             (
+;;                 (pair (unwrap! (map-get? pairs pair-id) err-invalid-id))
+;;                 (token1-id (get token1 pair))
+;;                 (token2-id (get token2 pair))
+;;                 (token1-balance (get token1-balance pair))
+;;                 (token2-balance (get token2-balance pair))
+;;                 (token1 (unwrap! (map-get? tokens token1-id) err-token-not-in-pair))
+;;                 (token2 (unwrap! (map-get? tokens token2-id) err-token-not-in-pair))
+;;                 (token1-contract (get contract token1))
+;;                 (token2-contract (get contract token2))
+;;             )
+;;             ;; do i need to pass in the token traits?
+;;             (ft-transfer? token1-contract amount tx-sender (as-contract tx-sender))
+;;         )
+;;     )
+;; )
 
 
 
