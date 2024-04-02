@@ -40,10 +40,10 @@
     )
 )
 
-(define-public (burn (amount uint))
+(define-public (burn (amount uint) (recipient principal))
     (begin
         (asserts! (is-eq tx-sender contract-owner) err-owner-only)
-        (ft-burn? cpm2-lp amount tx-sender) ;;can only burn tokens held by owner
+        (ft-burn? cpm2-lp amount recipient)
     )
 )
 

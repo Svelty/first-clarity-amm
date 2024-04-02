@@ -18,6 +18,9 @@
 
 ;;problems: first itteration too generalised, start with case of swaping single pair
 
+;;to generalize lp token must store a map of token-ids and balances, transfer function must update maps
+;;see "semi fungable token sip013"
+
 
 ;; traits
 (use-trait ft-trait 'SP3FBR2AGK5H9QBDH3EEN6DF8EK8JY7RX8QJ5SVTE.sip-010-trait-ft-standard.sip-010-trait)

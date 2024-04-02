@@ -3,19 +3,6 @@
 ;; summary:
 ;; description:
 
-;; rethinking first attempt was too complicated, focus on writing a contract for exchaing two known assets
-
-
-;; requirements:
-;; whitelist tokens for listing
-;; list a pair of tokens
-;; enable trading for pair
-;; add liquidity to pair (exchange tokens for LP token)
-;; exchange token for given pair
-;; get existing pairs
-;; remove liquidity (exchange LP token for tokens)
-;; disable trading for pair
-
 ;; https://solidity-by-example.org/defi/constant-product-amm/ - example
 
 
@@ -41,6 +28,7 @@
 (define-constant err-invalid-token (err u1008))
 (define-constant err-add-liquidity-invalid-amount (err u1009))
 (define-constant err-token-balance-zero (err u1010))
+(define-constant err-token-amount-zero (err u1011))
 
 ;; data vars
 ;; is there any reason to use ids or will tokens always be identified by principal?
@@ -89,12 +77,25 @@
             )
         )
         (ok true)
+    )
+)
 
-        ;; if lp token total supply = 0 mint(token1-amount * token2-max-amount)
-        ;; else 
-
-
-        ;; TODO: liquidity tokens
+(define-public (remove-liquidity (lp-token-contract <ft-trait>) (amount uint) (token1-contract <ft-trait>) (token2-contract <ft-trait>))
+    (let
+        (
+            (this-contract (as-contract tx-sender))
+            (sender tx-sender)
+            (token1-balance (try! (contract-call? token1-contract get-balance this-contract)))
+            (token2-balance (try! (contract-call? token2-contract get-balance this-contract)))
+            (lp-token-supply (try! (contract-call? lp-token-contract get-total-supply)))
+            (token1-amount (/ (* amount token1-balance) lp-token-supply))
+            (token2-amount (/ (* amount token2-balance) lp-token-supply))
+        )
+        (asserts! (and (not (is-eq token1-amount u0)) (not (is-eq token2-amount u0))) err-token-amount-zero)
+        (try! (as-contract (contract-call? .cpm2-lp-token burn amount sender)))
+        (try! (as-contract (contract-call? token1-contract transfer token1-amount this-contract sender none)))
+        (try! (as-contract (contract-call? token2-contract transfer token2-amount this-contract sender none)))
+        (ok true)
     )
 )
 
@@ -149,31 +150,6 @@
     )
 )
 
-;; (define-read-only (add-liquidity-amount-required (pair-id uint) (token-id uint) (token-amount uint))
-;;     (begin 
-;;         (let 
-;;             (
-;;                 (pair (unwrap! (map-get? pairs pair-id) err-invalid-id))
-;;                 (token1-id (get token1 pair))
-;;                 (token2-id (get token2 pair))
-;;                 (token1-balance (get token1-balance pair))
-;;                 (token2-balance (get token2-balance pair))
-;;             )
-;;             ;; if either balance is 0, any amount can be added to set the initial price
-;;             (if (or (is-eq token1-balance u0) (is-eq token2-balance u0))
-;;                 (ok u0)
-;;                 (if (is-eq token-id token1-id)
-;;                     (ok (/ (* token-amount token2-balance) token1-balance))
-;;                     (if (is-eq token-id token2-id)
-;;                         (ok (/ (* token-amount token1-balance) token2-balance))
-;;                         err-token-not-in-pair
-;;                     )
-;;                 )
-;;             )
-            
-;;         )
-;;     )
-;; )
 
 ;; private functions
 (define-private (is-owner) 
