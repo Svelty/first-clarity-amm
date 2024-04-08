@@ -13,14 +13,6 @@
 ;; remove liquidity (exchange LP token for tokens)
 ;; disable trading for pair
 
-;; https://solidity-by-example.org/defi/constant-product-amm/ - example
-
-
-;;problems: first itteration too generalised, start with case of swaping single pair
-
-;;to generalize lp token must store a map of token-ids and balances, transfer function must update maps
-;;see "semi fungable token sip013"
-
 
 ;; traits
 (use-trait ft-trait 'SP3FBR2AGK5H9QBDH3EEN6DF8EK8JY7RX8QJ5SVTE.sip-010-trait-ft-standard.sip-010-trait)
@@ -42,6 +34,9 @@
 (define-constant err-invalid-id (err u1007))
 (define-constant err-token-not-in-pair (err u1008))
 (define-constant err-add-liquidity-invalid-amount (err u1009))
+(define-constant err-token-balance-zero (err u1010))
+(define-constant err-token-amount-zero (err u1011))
+
 
 ;; data vars
 ;; is there any reason to use ids or will tokens always be identified by principal?
@@ -77,87 +72,91 @@
     )
 )
 
-;; xy = k
-;; (x + dx)(y + dy) = k'
-
-;; to add liquidity without chaning price ratio must stay constant 
-;; x / y = (x + dx) / (y + dy)
-;; x(y + dy) = y(x +dx)
-;; xy + xdy = yx + ydx
-;; xdy = ydx
-;; dy = ydx/x     to add amount dx you must add amount dy equal to current amount y times amount to add dx divided by current amount x
-
 (define-public (add-liquidity (pair-id uint) (token1-contract <ft-trait>) (token1-amount uint) (token2-contract <ft-trait>) (token2-max-amount uint) (lp-token-contract <sft-trait>))
-    (begin ;;do i actually need to use begin here?
-        (let
-            (
-                (this-contract (as-contract tx-sender))
-                (sender tx-sender)
-                (pair (unwrap! (map-get? pairs pair-id) err-invalid-id))
-                (token1-id (get token1 pair))
-                (token2-id (get token2 pair))
-                (token1-balance (get token1-balance pair));;check these for 0 balance
-                (token2-balance (get token2-balance pair))
-                (token2-required-amount (calculate-add-liquidity-required-amount token1-amount token1-balance token2-balance))
-                (lp-token-id (get lp-token-id pair))
-                (lp-token-supply (try! (contract-call? lp-token-contract get-total-supply lp-token-id)))
-                (token2-amount (if (is-eq token2-required-amount u0) token2-max-amount token2-required-amount))
-            )
-            (asserts! (>= token2-max-amount token2-amount) err-add-liquidity-invalid-amount)
-            (try! (contract-call? token1-contract transfer token1-amount tx-sender this-contract none))
-            (try! (contract-call? token2-contract transfer token2-amount tx-sender this-contract none))
-            (if (is-eq lp-token-supply u0)
-                (try! (as-contract (contract-call? .cpm-lp-token mint (sqrti (* token1-amount token2-amount)) lp-token-id  sender)))
-                ;; needs some checks to make sure we arn't dividing by 0
-                (if (< (/ (* token1-amount lp-token-supply) token1-balance) (/ (* token2-amount lp-token-supply) token2-balance))
-                    (try! (as-contract (contract-call? .cpm-lp-token mint (/ (* token1-amount lp-token-supply) token1-balance) lp-token-id sender)))
-                    (try! (as-contract (contract-call? .cpm-lp-token mint (/ (* token2-amount lp-token-supply) token2-balance) lp-token-id sender)))
-                )
-            )
-            (ok true)
+    (let
+        (
+            (this-contract (as-contract tx-sender))
+            (sender tx-sender)
+            (pair (unwrap! (map-get? pairs pair-id) err-invalid-id))
+            (token1-id (get token1 pair))
+            (token2-id (get token2 pair))
+            (token1-balance (get token1-balance pair));;check these for 0 balance
+            (token2-balance (get token2-balance pair))
+            (token2-required-amount (calculate-add-liquidity-required-amount token1-amount token1-balance token2-balance))
+            (lp-token-id (get lp-token-id pair))
+            (lp-token-supply (try! (contract-call? lp-token-contract get-total-supply lp-token-id)))
+            (token2-amount (if (is-eq token2-required-amount u0) token2-max-amount token2-required-amount))
         )
+        (asserts! (>= token2-max-amount token2-amount) err-add-liquidity-invalid-amount)
+        (try! (contract-call? token1-contract transfer token1-amount tx-sender this-contract none))
+        (try! (contract-call? token2-contract transfer token2-amount tx-sender this-contract none))
+        (map-set pairs pair-id (merge pair { token1-balance: (+ token1-balance token1-amount), token2-balance: (+ token2-balance token2-amount)}))
+        (if (is-eq lp-token-supply u0)
+            (try! (as-contract (contract-call? .cpm-lp-token mint (sqrti (* token1-amount token2-amount)) lp-token-id  sender)))
+            ;; needs some checks to make sure we arn't dividing by 0
+            (if (< (/ (* token1-amount lp-token-supply) token1-balance) (/ (* token2-amount lp-token-supply) token2-balance))
+                (try! (as-contract (contract-call? .cpm-lp-token mint (/ (* token1-amount lp-token-supply) token1-balance) lp-token-id sender)))
+                (try! (as-contract (contract-call? .cpm-lp-token mint (/ (* token2-amount lp-token-supply) token2-balance) lp-token-id sender)))
+            )
+        )
+        (ok true)
     )
 )
 
-;; pricing - constant product x * y = k (token_suppy_y * token_supply_x = constant_k)
-;; (x + dx)(y - dy) = k   for a change in y, change in x must corospond to keep k constant 
-;; y - dy = k/(x+dx)
-;; y - k/(x+dx) = dy
-;; dy = y - k/(x+dx)
-;; dy = (x+dx)y/(x+dx) - k/(x+dx)
-;; dy = (xy + dxy -k)/(x+dx)
-;; dy = (k + dxy - k)/(x+dx)
-;; dy = dxy/(x + dx)     for a change of x dx, change of y dy is equal to the change of x times the supply of y divided by the supply of x plus the change of x
+(define-public (remove-liquidity (pair-id uint) (lp-token-contract <sft-trait>) (amount uint) (token1-contract <ft-trait>) (token2-contract <ft-trait>))
+    (let
+        (
+            (this-contract (as-contract tx-sender))
+            (sender tx-sender)
+            (pair (unwrap! (map-get? pairs pair-id) err-invalid-id))
+            (token1-id (get token1 pair))
+            (token2-id (get token2 pair))
+            (token1-balance (get token1-balance pair));;check these for 0 balance
+            (token2-balance (get token2-balance pair))
+            (lp-token-id (get lp-token-id pair))
+            (lp-token-supply (try! (contract-call? lp-token-contract get-total-supply lp-token-id)))
+            (token1-amount (/ (* amount token1-balance) lp-token-supply))
+            (token2-amount (/ (* amount token2-balance) lp-token-supply))
+        )
+        (asserts! (and (not (is-eq token1-amount u0)) (not (is-eq token2-amount u0))) err-token-amount-zero)
+        (try! (as-contract (contract-call? .cpm-lp-token burn amount lp-token-id sender)))
+        (try! (as-contract (contract-call? token1-contract transfer token1-amount this-contract sender none)))
+        (try! (as-contract (contract-call? token2-contract transfer token2-amount this-contract sender none)))
+        (map-set pairs pair-id (merge pair { token1-balance: (- token1-balance token1-amount), token2-balance: (- token2-balance token2-amount)}))
+        (ok true)
+    )
+)
 
-;; price of x = token_supply_y/token_supply_x
-;; price of y = token_supply_x/token_supply_y
-
-;; TODO: get add liquidity working first
-;; (define-public (swap-deliver-exact (pair-id uint) (token-id uint) (amount uint))
-;;     (begin
-;;         (let 
-;;             (
-;;                 (pair (unwrap! (map-get? pairs pair-id) err-invalid-id))
-;;                 (token1-id (get token1 pair))
-;;                 (token2-id (get token2 pair))
-;;                 (token1-balance (get token1-balance pair))
-;;                 (token2-balance (get token2-balance pair))
-;;                 (token1 (unwrap! (map-get? tokens token1-id) err-token-not-in-pair))
-;;                 (token2 (unwrap! (map-get? tokens token2-id) err-token-not-in-pair))
-;;                 (token1-contract (get contract token1))
-;;                 (token2-contract (get contract token2))
-;;             )
-;;             ;; do i need to pass in the token traits?
-;;             (ft-transfer? token1-contract amount tx-sender (as-contract tx-sender))
-;;         )
-;;     )
-;; )
-
+(define-public (swap (pair-id uint) (from-token-contract <ft-trait>) (from-amount uint) (to-token-contract <ft-trait>))
+    (let
+        (
+            (this-contract (as-contract tx-sender))
+            (sender tx-sender)
+            (pair (unwrap! (map-get? pairs pair-id) err-invalid-id))
+            (token1-balance (get token1-balance pair));;check these for 0 balance
+            (token2-balance (get token2-balance pair))
+            (from-token-balance (if (is-eq (get token1 pair) (contract-of from-token-contract)) (get token1-balance pair) (get token2-balance pair)))
+            (to-token-balance (if (is-eq (get token1 pair) (contract-of to-token-contract)) (get token1-balance pair) (get token2-balance pair)))
+            (to-amount (calculate-swap-amount from-amount from-token-balance to-token-balance))
+            
+        )
+        (asserts! (or 
+            (and (is-eq (contract-of from-token-contract) (get token1 pair)) (is-eq (contract-of to-token-contract) (get token2 pair)))
+            (and (is-eq (contract-of from-token-contract) (get token2 pair)) (is-eq (contract-of to-token-contract) (get token1 pair)))
+        ) err-token-not-in-pair)
+        (asserts! (not (is-eq to-amount u0)) err-token-balance-zero)
+        (try! (contract-call? from-token-contract transfer from-amount tx-sender this-contract none))
+        (try! (as-contract (contract-call? to-token-contract transfer to-amount this-contract sender none)))
+        (if (is-eq (get token1 pair) (contract-of from-token-contract))
+            (map-set pairs pair-id (merge pair { token1-balance: (- token1-balance from-amount), token2-balance: (+ token2-balance to-amount)}))
+            (map-set pairs pair-id (merge pair { token1-balance: (+ token1-balance to-amount), token2-balance: (- token2-balance from-amount)}))
+        )
+        (ok true)
+    )
+)
 
 
 ;; read only functions
-
-
 (define-read-only (calculate-add-liquidity-required-amount (amount1 uint) (balance1 uint) (balance2 uint))
     (if (or (is-eq balance1 u0) (is-eq balance2 u0))
         u0
@@ -165,35 +164,16 @@
     )
 )
 
-;; (define-read-only (add-liquidity-amount-required (pair-id uint) (token-id uint) (token-amount uint))
-;;     (begin 
-;;         (let 
-;;             (
-;;                 (pair (unwrap! (map-get? pairs pair-id) err-invalid-id))
-;;                 (token1-id (get token1 pair))
-;;                 (token2-id (get token2 pair))
-;;                 (token1-balance (get token1-balance pair))
-;;                 (token2-balance (get token2-balance pair))
-;;             )
-;;             ;; if either balance is 0, any amount can be added to set the initial price
-;;             (if (or (is-eq token1-balance u0) (is-eq token2-balance u0))
-;;                 (ok u0)
-;;                 (if (is-eq token-id token1-id)
-;;                     (ok (/ (* token-amount token2-balance) token1-balance))
-;;                     (if (is-eq token-id token2-id)
-;;                         (ok (/ (* token-amount token1-balance) token2-balance))
-;;                         err-token-not-in-pair
-;;                     )
-;;                 )
-;;             )
-            
-;;         )
-;;     )
-;; )
+(define-read-only (calculate-swap-amount (amount1 uint) (balance1 uint) (balance2 uint))
+    (if (or (is-eq balance1 u0) (is-eq balance2 u0))
+        u0
+        (/ (* amount1 balance2) (+ amount1 balance1))
+    )
+)
 
 ;; private functions
 (define-private (is-owner) 
-    (ok (asserts! (is-eq tx-sender (var-get owner)) err-not-owner))
+    (is-eq tx-sender (var-get owner))
 )
 
 (define-private (does-pair-exist (contract1 principal) (contract2 principal))

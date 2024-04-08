@@ -47,6 +47,8 @@
     )
 )
 
+;; TODO: mint, burn and transfer should emit events
+
 (define-public (mint (amount uint) (token-id uint) (recipient principal))
     (let 
         (
